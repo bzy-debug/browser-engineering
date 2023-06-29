@@ -20,7 +20,7 @@ def request(url: str) -> tuple[dict[str, str], str]:
 
   scheme, url = url.split(':', 1)
 
-  assert scheme in ['http', 'https', 'file', 'data'], "Unknown scheme {}".format(scheme)
+  assert scheme in ['http', 'https', 'file', 'data', 'view-source'], "Unknown scheme {}".format(scheme)
 
   if scheme == 'file':
     assert url.startswith('//'), "scheme file should start with //"
@@ -32,6 +32,10 @@ def request(url: str) -> tuple[dict[str, str], str]:
   elif scheme == 'data':
     content_type, content = url.split(',', 1)
     return {}, f"<html><body>{transform(content)}</body></html>"
+
+  elif scheme == 'view-source':
+    _, http_source = request(url)
+    return {}, f"<html><body>{transform(http_source)}</body></html>"
 
   assert url.startswith('//'), "http or https should start with //"
   url = url[len('//'):]
@@ -105,12 +109,15 @@ def show(html: str):
       continue
     elif c == '>':
       in_angle = False
-      in_body = tag == 'body'
+      if tag == 'body':
+        in_body = True
+      elif tag == '/body':
+        in_body = False
       continue
     elif in_angle:
       tag += c
       continue
-    if in_body and not in_angle:
+    if in_body and (not in_angle):
       buffer += c
 
   print(entities_process(buffer))
