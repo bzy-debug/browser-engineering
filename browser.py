@@ -3,16 +3,14 @@ import socket
 import ssl
 import sys
 
-def file_handler(url):
-  path = url[len('file://'):]
-  subprocess.run(args=['open', path])
+def transform(body: str) -> str:
+  # transfomr '<' to '&lt;' '>' to '&gt;'
+  return body.replace('<', '&lt;').replace('>', '&gt;')
 
-def data_handler(url):
-  content_type, content = url[len('data:'):].split(',', 1)
-  print(f'<html><body>{content}</body></html>')
-
-def request(url):
+def request(url: str) -> tuple[dict[str, str], str]:
   # url = 'https://example.org/index.html'
+  # url = 'file:///path/to/file'
+  # url = 'data:text/html,Hello world!'
 
   s = socket.socket(
     family= socket.AF_INET,
@@ -20,9 +18,23 @@ def request(url):
     proto=socket.IPPROTO_TCP
   )
 
-  scheme, url = url.split('://', 1)
+  scheme, url = url.split(':', 1)
 
-  assert scheme in ['http', 'https'], "Unknown scheme {}".format(scheme)
+  assert scheme in ['http', 'https', 'file', 'data'], "Unknown scheme {}".format(scheme)
+
+  if scheme == 'file':
+    assert url.startswith('//'), "scheme file should start with //"
+    url = url[len('//'):]
+    with open(url, encoding='utf-8') as f:
+      data = f.read()
+    return {}, f"<html><body>{transform(data)}</body></html>"
+
+  elif scheme == 'data':
+    content_type, content = url.split(',', 1)
+    return {}, f"<html><body>{transform(content)}</body></html>"
+
+  assert url.startswith('//'), "http or https should start with //"
+  url = url[len('//'):]
 
   host, path = url.split('/', 1)
   port = 80 if scheme == 'http' else 443
@@ -40,6 +52,8 @@ def request(url):
           f'Host: {host}\r\n' +
           'Connection: close\r\n' +
           'User-Agent: Mozilla/5.0\r\n\r\n').encode('utf8'))
+
+  print('wait for response')
 
   response = s.makefile('r', encoding='utf8', newline='\r\n')
 
@@ -61,7 +75,7 @@ def request(url):
   s.close()
   return headers, body
 
-def entities_process(html):
+def entities_process(html: str) -> str:
   # &lt; and &gt;
   buffer = ""
 
@@ -76,30 +90,37 @@ def entities_process(html):
 
     buffer += c
 
-def show(html):
+  return buffer
+
+def show(html: str):
   in_body = False
   in_angle = False
   tag = ''
+  buffer = ''
 
   for c in html:
     if c == '<':
       in_angle = True
       tag = ''
+      continue
     elif c == '>':
       in_angle = False
+      in_body = tag == 'body'
+      continue
     elif in_angle:
       tag += c
-    elif not in_angle and tag == 'body':
-      in_body = True
-    elif not in_angle and tag == '/body':
-      in_body = False
-    elif in_body:
-      print(c, end='')
+      continue
+    if in_body and not in_angle:
+      buffer += c
 
-def load(url):
+  print(entities_process(buffer))
+
+def load(url: str):
   headers, body = request(url)
   show(body)
 
 if __name__ == '__main__':
-  url = sys.argv[1]
-  load(url)
+  if len(sys.argv) == 1:
+    load('file://browser.py')
+    exit(0)
+  load(sys.argv[1])
