@@ -1,6 +1,10 @@
+import subprocess
+import socket
+import ssl
+import sys
+
 def file_handler(url):
   path = url[len('file://'):]
-  import subprocess
   subprocess.run(args=['open', path])
 
 def data_handler(url):
@@ -10,9 +14,6 @@ def data_handler(url):
 def request(url):
   # url = 'https://example.org/index.html'
 
-  import socket
-  import ssl
-
   s = socket.socket(
     family= socket.AF_INET,
     type=socket.SOCK_STREAM,
@@ -20,15 +21,14 @@ def request(url):
   )
 
   scheme, url = url.split('://', 1)
+
   assert scheme in ['http', 'https'], "Unknown scheme {}".format(scheme)
 
   host, path = url.split('/', 1)
   port = 80 if scheme == 'http' else 443
-
   if ':' in host:
     host, port = host.split(':', 1)
     port = int(port)
-
   path = '/' + path
 
   if scheme == 'https':
@@ -54,8 +54,8 @@ def request(url):
     header, value = line.split(":", 1)
     headers[header.lower()] = value.strip()
 
-    assert "transfer-encoding" not in headers
-    assert "content-encoding" not in headers
+  assert "transfer-encoding" not in headers
+  assert "content-encoding" not in headers
 
   body = response.read()
   s.close()
@@ -76,18 +76,7 @@ def entities_process(html):
 
     buffer += c
 
-def show(body):
-  in_angle = False
-
-  for c in body:
-    if c == '<':
-      in_angle = True
-    elif c == '>':
-      in_angle = False
-    elif not in_angle:
-      print(c, end='')
-
-def show_body(html):
+def show(html):
   in_body = False
   in_angle = False
   tag = ''
@@ -109,14 +98,8 @@ def show_body(html):
 
 def load(url):
   headers, body = request(url)
-  show_body(body)
+  show(body)
 
 if __name__ == '__main__':
-  import sys
   url = sys.argv[1]
-  if url.startswith('http') or url.startswith('https'):
-    load(sys.argv[1])
-  elif url.startswith('file'):
-    file_handler(url)
-  elif url.startswith('data'):
-    data_handler(url)
+  load(url)
