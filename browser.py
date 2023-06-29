@@ -61,6 +61,21 @@ def request(url):
   s.close()
   return headers, body
 
+def entities_process(html):
+  # &lt; and &gt;
+  buffer = ""
+
+  for c in html:
+    if c == ';':
+      if buffer[-3:] == "&lt":
+        buffer = buffer[:-3] + "<"
+        continue
+      elif buffer[-3:] == "&gt":
+        buffer = buffer[:-3] + ">"
+        continue
+
+    buffer += c
+
 def show(body):
   in_angle = False
 
