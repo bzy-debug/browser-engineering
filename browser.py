@@ -1,6 +1,8 @@
+from typing import List, Tuple
 import socket
 import ssl
 import time
+import tkinter
 
 class RedirectLoopError(Exception): pass
 
@@ -130,7 +132,9 @@ class URL:
                 cache.add(repr(self), content, max_age)
         return content
 
-def show(body: str):
+
+def lex(body: str) -> str:
+    text = ""
     in_tag = False
     for c in body:
         if c == '<':
@@ -138,12 +142,70 @@ def show(body: str):
         elif c == '>':
             in_tag = False
         elif not in_tag:
-            print(c, end='')
+            text += c
+    return text
 
-def load(url: URL):
-    body = url.request()
-    show(body)
+DisplayList = List[Tuple[int, int, str]]
+
+def layout(text: str) -> DisplayList:
+    display_list: list[tuple[int, int, str]] = []
+    cursor_x, cursor_y = HSTEP, VSTEP
+    for c in text:
+        display_list.append((cursor_x, cursor_y, c))
+        cursor_x += HSTEP
+        if cursor_x >= WIDTH - HSTEP:
+            cursor_y += VSTEP
+            cursor_x = HSTEP
+    return display_list
+
+WIDTH, HEIGHT = 800, 600
+HSTEP, VSTEP = 13, 18
+SCROLL_STEP = 100
+
+def set_parameters(**params):
+    global WIDTH, HEIGHT, HSTEP, VSTEP, SCROLL_STEP
+    if "WIDTH" in params: WIDTH = params["WIDTH"]
+    if "HEIGHT" in params: HEIGHT = params["HEIGHT"]
+    if "HSTEP" in params: HSTEP = params["HSTEP"]
+    if "VSTEP" in params: VSTEP = params["VSTEP"]
+    if "SCROLL_STEP" in params: SCROLL_STEP = params["SCROLL_STEP"]
+
+
+class Browser:
+    window: tkinter.Tk
+    canvas: tkinter.Canvas
+    display_list: DisplayList
+    scroll: int
+
+    def __init__(self):
+        self.window = tkinter.Tk()
+        self.canvas = tkinter.Canvas(
+            self.window,
+            width=WIDTH,
+            height=HEIGHT
+        )
+        self.canvas.pack()
+        self.scroll = 0
+        self.window.bind("<Down>", self.scrolldown)
+
+    def scrolldown(self, e: tkinter.Event):
+        self.scroll += SCROLL_STEP
+        self.draw()
+
+    def load(self, url: URL):
+        body = url.request()
+        text = lex(body)
+        self.display_list = layout(text)
+        self.draw()
+
+    def draw(self):
+        self.canvas.delete('all')
+        for x, y, c in self.display_list:
+            if y > self.scroll + HEIGHT: continue
+            if y + VSTEP < self.scroll: continue
+            self.canvas.create_text(x, y - self.scroll, text=c)
 
 if __name__ == "__main__":
     import sys
-    load(URL(sys.argv[1]))
+    Browser().load(URL(sys.argv[1]))
+    tkinter.mainloop()
