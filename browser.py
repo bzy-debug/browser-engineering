@@ -201,7 +201,10 @@ class Browser:
         self.draw()
 
     def scrolldown(self, e: tkinter.Event):
-        self.scroll += SCROLL_STEP
+        if self.scroll + HEIGHT + SCROLL_STEP > self.content_height:
+            self.scroll += self.content_height - self.scroll - HEIGHT
+        else:
+            self.scroll += SCROLL_STEP
         self.draw()
 
     def load(self, url: URL):
@@ -210,12 +213,22 @@ class Browser:
         self.display_list = layout(self.text)
         self.draw()
 
+    @property
+    def content_height(self) -> int:
+        _, y, _ = self.display_list[-1]
+        return y + VSTEP
+
     def draw(self):
         self.canvas.delete('all')
         for x, y, c in self.display_list:
             if y > self.scroll + HEIGHT: continue
             if y + VSTEP < self.scroll: continue
             self.canvas.create_text(x, y - self.scroll, text=c)
+
+        if self.content_height <= HEIGHT: return
+        scrollbar_start = self.scroll / self.content_height * HEIGHT
+        scrollbar_end = (self.scroll + HEIGHT) / self.content_height * HEIGHT
+        self.canvas.create_rectangle(WIDTH - 8, scrollbar_start, WIDTH, scrollbar_end, width=0, fill='blue')
 
 if __name__ == "__main__":
     import sys
