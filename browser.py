@@ -151,6 +151,10 @@ def layout(text: str) -> DisplayList:
     display_list: list[tuple[int, int, str]] = []
     cursor_x, cursor_y = HSTEP, VSTEP
     for c in text:
+        if c == '\n':
+            cursor_y += VSTEP * 2
+            cursor_x = HSTEP
+            continue
         display_list.append((cursor_x, cursor_y, c))
         cursor_x += HSTEP
         if cursor_x >= WIDTH - HSTEP:
