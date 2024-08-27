@@ -1,3 +1,4 @@
+from operator import truediv
 from typing import List, Tuple
 import socket
 import ssl
@@ -178,6 +179,7 @@ def set_parameters(**params):
 class Browser:
     window: tkinter.Tk
     canvas: tkinter.Canvas
+    text: str
     display_list: DisplayList
     scroll: int
 
@@ -188,9 +190,15 @@ class Browser:
             width=WIDTH,
             height=HEIGHT
         )
-        self.canvas.pack()
+        self.canvas.pack(expand=True, fill='both')
         self.scroll = 0
         self.window.bind("<Down>", self.scrolldown)
+        self.window.bind("<Configure>", self.resize)
+
+    def resize(self, e: tkinter.Event):
+        set_parameters(WIDTH=e.width, HEIGHT=e.height)
+        self.display_list = layout(self.text)
+        self.draw()
 
     def scrolldown(self, e: tkinter.Event):
         self.scroll += SCROLL_STEP
@@ -198,8 +206,8 @@ class Browser:
 
     def load(self, url: URL):
         body = url.request()
-        text = lex(body)
-        self.display_list = layout(text)
+        self.text = lex(body)
+        self.display_list = layout(self.text)
         self.draw()
 
     def draw(self):

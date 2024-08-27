@@ -5,10 +5,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python Debugger: Current File with Arguments",
+      "name": "test",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/test/run.py",
+      "console": "integratedTerminal",
+      "args": ["${command:pickArgs}"]
+    },
+    {
+      "name": "browser",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/browser.py",
       "console": "integratedTerminal",
       "args": ["${command:pickArgs}"]
     }
