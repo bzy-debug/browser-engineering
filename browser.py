@@ -1,3 +1,4 @@
+from email.mime import image
 from operator import truediv
 from typing import List, Tuple
 import socket
@@ -175,6 +176,7 @@ def set_parameters(**params):
     if "VSTEP" in params: VSTEP = params["VSTEP"]
     if "SCROLL_STEP" in params: SCROLL_STEP = params["SCROLL_STEP"]
 
+GRINNING_FACE: tkinter.PhotoImage
 
 class Browser:
     window: tkinter.Tk
@@ -183,7 +185,9 @@ class Browser:
     display_list: DisplayList
     scroll: int
 
+
     def __init__(self):
+        global GRINNING_FACE
         self.window = tkinter.Tk()
         self.canvas = tkinter.Canvas(
             self.window,
@@ -194,6 +198,7 @@ class Browser:
         self.scroll = 0
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Configure>", self.resize)
+        GRINNING_FACE = tkinter.PhotoImage(file='openmoji/1F600.png')
 
     def resize(self, e: tkinter.Event):
         set_parameters(WIDTH=e.width, HEIGHT=e.height)
@@ -223,7 +228,10 @@ class Browser:
         for x, y, c in self.display_list:
             if y > self.scroll + HEIGHT: continue
             if y + VSTEP < self.scroll: continue
-            self.canvas.create_text(x, y - self.scroll, text=c)
+            if c == '\N{GRINNING FACE}':
+                self.canvas.create_image(x, y - self.scroll, image=GRINNING_FACE)
+            else:
+                self.canvas.create_text(x, y - self.scroll, text=c)
 
         if self.content_height <= HEIGHT: return
         scrollbar_start = self.scroll / self.content_height * HEIGHT
