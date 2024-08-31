@@ -1,10 +1,10 @@
-from email.mime import image
-from operator import truediv
-from typing import List, Tuple
+from sys import float_repr_style
+from typing import List, Literal, Tuple, Union
 import socket
 import ssl
 import time
 import tkinter
+import tkinter.font
 
 class RedirectLoopError(Exception): pass
 
@@ -134,41 +134,93 @@ class URL:
                 cache.add(repr(self), content, max_age)
         return content
 
+class Text:
+    text: str
+    def __init__(self, text: str):
+        self.text = text
+    def __repr__(self) -> str:
+        return f"Text({repr(self.text)})"
 
-def lex(body: str) -> str:
-    text = ""
+class Tag:
+    tag: str
+    def __init__(self, tag: str):
+        self.tag = tag
+    def __repr__(self) -> str:
+        return f"Tag({repr(self.tag)})"
+
+Token = Union[Text, Tag]
+
+def lex(body: str) -> List[Token]:
+    out = []
+    buffer = ''
     in_tag = False
     for c in body:
         if c == '<':
             in_tag = True
+            if buffer: out.append(Text(buffer))
+            buffer = ''
         elif c == '>':
             in_tag = False
-        elif not in_tag:
-            text += c
-    return text
+            out.append(Tag(buffer))
+            buffer = ''
+        else:
+            buffer += c
+    if not in_tag and buffer:
+        out.append(Text(buffer))
+    return out
 
-DisplayList = List[Tuple[int, int, str]]
+DisplayList = List[Tuple[float, float, str, tkinter.font.Font]]
 
-def layout(text: str) -> DisplayList:
-    display_list: list[tuple[int, int, str]] = []
-    cursor_x, cursor_y = HSTEP, VSTEP
-    for c in text:
-        if c == '\n':
-            cursor_y += VSTEP * 2
-            cursor_x = HSTEP
-            continue
-        display_list.append((cursor_x, cursor_y, c))
-        cursor_x += HSTEP
-        if cursor_x >= WIDTH - HSTEP:
-            cursor_y += VSTEP
-            cursor_x = HSTEP
-    return display_list
+class Layout:
+    display_list: DisplayList
+    cursor_x: float
+    cursor_y: float
+    weight: Literal["normal", "bold"]
+    style: Literal['roman', 'italic']
+
+    def __init__(self, tokens: List[Token]):
+        self.display_list = []
+        self.cursor_x = HSTEP
+        self.cursor_y = VSTEP
+        self.weight = 'normal'
+        self.style = 'roman'
+
+        for tok in tokens:
+            self.token(tok)
+
+    def token(self, token: Token):
+        if isinstance(token, Text):
+            self.text(token)
+        elif token.tag == 'i':
+            self.style = "italic"
+        elif token.tag == '/i':
+            self.style = 'roman'
+        elif token.tag == 'b':
+            self.weight = 'bold'
+        elif token.tag == '/b':
+            self.weight = 'normal'
+
+    def text(self, text: Text):
+        for word in text.text.split():
+            font = tkinter.font.Font(
+                size=16,
+                weight=self.weight,
+                slant=self.style
+            )
+            w = font.measure(word)
+            if self.cursor_x + w >= WIDTH - HSTEP:
+                self.cursor_y += font.metrics('linespace') * 1.25
+                self.cursor_x = HSTEP
+            self.display_list.append((self.cursor_x, self.cursor_y, word, font))
+            self.cursor_x += w + font.measure(' ')
+
+
 
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
 
-def set_parameters(**params):
+def set_parameters(**params: int):
     global WIDTH, HEIGHT, HSTEP, VSTEP, SCROLL_STEP
     if "WIDTH" in params: WIDTH = params["WIDTH"]
     if "HEIGHT" in params: HEIGHT = params["HEIGHT"]
@@ -181,9 +233,9 @@ GRINNING_FACE: tkinter.PhotoImage
 class Browser:
     window: tkinter.Tk
     canvas: tkinter.Canvas
-    text: str
+    tokens: List[Token]
     display_list: DisplayList
-    scroll: int
+    scroll: float
 
 
     def __init__(self):
@@ -202,7 +254,7 @@ class Browser:
 
     def resize(self, e: tkinter.Event):
         set_parameters(WIDTH=e.width, HEIGHT=e.height)
-        self.display_list = layout(self.text)
+        self.display_list = Layout(self.tokens).display_list
         self.draw()
 
     def scrolldown(self, e: tkinter.Event):
@@ -214,24 +266,24 @@ class Browser:
 
     def load(self, url: URL):
         body = url.request()
-        self.text = lex(body)
-        self.display_list = layout(self.text)
+        self.tokens = lex(body)
+        self.display_list = Layout(self.tokens).display_list
         self.draw()
 
     @property
-    def content_height(self) -> int:
-        _, y, _ = self.display_list[-1]
+    def content_height(self) -> float:
+        _, y, _, _ = self.display_list[-1]
         return y + VSTEP
 
     def draw(self):
         self.canvas.delete('all')
-        for x, y, c in self.display_list:
+        for x, y, c, font in self.display_list:
             if y > self.scroll + HEIGHT: continue
             if y + VSTEP < self.scroll: continue
             if c == '\N{GRINNING FACE}':
                 self.canvas.create_image(x, y - self.scroll, image=GRINNING_FACE)
             else:
-                self.canvas.create_text(x, y - self.scroll, text=c)
+                self.canvas.create_text(x, y - self.scroll, text=c, anchor='nw', font=font)
 
         if self.content_height <= HEIGHT: return
         scrollbar_start = self.scroll / self.content_height * HEIGHT

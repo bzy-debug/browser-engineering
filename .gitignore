@@ -1,6 +1,7 @@
 env
 __pycache__
 .DS_Store
+test.html
 
 !.vscode
 !.env.fish
