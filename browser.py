@@ -241,8 +241,20 @@ class Layout:
             )
             w = font.measure(word)
             if self.cursor_x + w >= WIDTH - HSTEP:
+                if word.find("\N{soft hyphen}") != -1:
+                    parts = word.split("\N{soft hyphen}")
+                    split_index = -1
+                    for i in range(1, len(parts) + 1):
+                        w = font.measure(f'{"".join(parts[0:i])}-')
+                        if self.cursor_x + w >= WIDTH - HSTEP:
+                            split_index = i - 1
+                            break
+                    if split_index != -1:
+                        self.line.append((self.cursor_x, "".join(parts[0:split_index]) + "-", font, self.is_sup))
+                        self.flush()
+                        self.word(Text("\N{soft hyphen}".join(parts[split_index:])))
+                        continue
                 self.flush()
-
             self.line.append((self.cursor_x, word, font, self.is_sup))
             self.cursor_x += w + font.measure(' ')
 
