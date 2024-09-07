@@ -220,6 +220,10 @@ class Layout:
         elif token.tag == '/p':
             self.flush()
             self.cursor_y += VSTEP
+        elif token.tag == 'h1 class="title"':
+            self.flush()
+        elif token.tag == '/h1':
+            self.flush(center=True)
 
     def word(self, text: Text):
         for word in text.text.split():
@@ -235,14 +239,21 @@ class Layout:
             self.line.append((self.cursor_x, word, font))
             self.cursor_x += w + font.measure(' ')
 
-    def flush(self):
+    def flush(self, center=False):
         if not self.line: return
+        if center:
+            last_x , last_word, last_font = self.line[-1]
+            first_x, _, _ = self.line[0]
+            total_width = last_x + last_font.measure(last_word) - first_x
+            h_offset = (WIDTH - 2 * HSTEP - total_width) / 2
+        else:
+            h_offset = 0
         metrics = [font.metrics() for x, word, font in self.line]
         max_ascent = max([metric['ascent'] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
         for x, word, font in self.line:
             y = baseline - font.metrics('ascent')
-            self.display_list.append((x, y, word, font))
+            self.display_list.append((x + h_offset, y, word, font))
         max_descent = max([metric['descent'] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
         self.cursor_x = HSTEP
