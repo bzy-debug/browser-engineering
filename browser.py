@@ -171,11 +171,35 @@ def lex(body: str) -> List[Token]:
 DisplayList = List[Tuple[float, float, str, tkinter.font.Font]]
 Line = List[Tuple[float, str, tkinter.font.Font, bool]]
 
+# "Hello123Abc" -> ["H", "ELLO", "123A", "BC"]
+def attr_split(word: str) -> List[str]:
+    out = []
+    buffer = ''
+    is_lower = False
+    for c in word:
+        if c.islower():
+            if is_lower:
+                buffer += c
+            else:
+                if buffer: out.append(buffer)
+                buffer = c
+                is_lower = True
+        else:
+            if not is_lower:
+                buffer += c
+            else :
+                if buffer: out.append(buffer)
+                buffer = c
+                is_lower = False
+    if buffer: out.append(buffer)
+    return out
+
 class Layout:
     display_list: DisplayList
     line: Line
     size: float
     is_sup: bool
+    is_abbr: bool
     cursor_x: float
     cursor_y: float
     weight: Literal["normal", "bold"]
@@ -190,6 +214,7 @@ class Layout:
         self.weight = 'normal'
         self.style = 'roman'
         self.is_sup = False
+        self.is_abbr = False
 
         for tok in tokens:
             self.token(tok)
@@ -226,20 +251,39 @@ class Layout:
             self.flush(center=True)
         elif token.tag == 'sup':
             self.is_sup = True
-            self.size /= 2
         elif token.tag == '/sup':
             self.is_sup = False
-            self.size *= 2
+        elif token.tag == 'abbr':
+            self.is_abbr = True
+        elif token.tag == '/abbr':
+            self.is_abbr = False
 
 
     def word(self, text: Text):
         for word in text.text.split():
-            font = get_font(
-                size=int(self.size),
-                weight=self.weight,
-                style=self.style
-            )
-            w = font.measure(word)
+            if self.is_abbr:
+                w = 0
+                for s in attr_split(word):
+                    if s.islower():
+                        size = self.size / 2
+                        weight = 'bold'
+                    else:
+                        size = self.size
+                        weight = self.weight
+                    font = get_font(
+                        size=int(size),
+                        weight=weight,
+                        style=self.style
+                    )
+                    w += font.measure(s)
+            else:
+                size = self.is_sup and self.size / 2 or self.size
+                font = get_font(
+                    size=int(size),
+                    weight=self.weight,
+                    style=self.style
+                )
+                w = font.measure(word)
             if self.cursor_x + w >= WIDTH - HSTEP:
                 if word.find("\N{soft hyphen}") != -1:
                     parts = word.split("\N{soft hyphen}")
@@ -255,8 +299,26 @@ class Layout:
                         self.word(Text("\N{soft hyphen}".join(parts[split_index:])))
                         continue
                 self.flush()
-            self.line.append((self.cursor_x, word, font, self.is_sup))
-            self.cursor_x += w + font.measure(' ')
+            if self.is_abbr:
+                for s in attr_split(word):
+                    if s.islower():
+                        size = self.size / 2
+                        weight = 'bold'
+                    else:
+                        size = self.size
+                        weight = self.weight
+                    font = get_font(
+                        size=int(size),
+                        weight=weight,
+                        style=self.style
+                    )
+                    self.line.append((self.cursor_x, s.upper(), font, self.is_sup))
+                    self.cursor_x += font.measure(s.upper())
+                    space_font = get_font(size=int(self.size), weight=self.weight, style=self.style)
+                self.cursor_x += space_font.measure(' ')
+            else:
+                self.line.append((self.cursor_x, word, font, self.is_sup))
+                self.cursor_x += w + font.measure(' ')
 
     def flush(self, center=False):
         if not self.line: return
