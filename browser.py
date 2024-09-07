@@ -1,5 +1,3 @@
-from colorsys import hsv_to_rgb
-from sys import float_repr_style
 from typing import List, Literal, Tuple, Union
 import socket
 import ssl
@@ -171,12 +169,13 @@ def lex(body: str) -> List[Token]:
     return out
 
 DisplayList = List[Tuple[float, float, str, tkinter.font.Font]]
-Line = List[Tuple[float, str, tkinter.font.Font]]
+Line = List[Tuple[float, str, tkinter.font.Font, bool]]
 
 class Layout:
     display_list: DisplayList
     line: Line
-    size: int
+    size: float
+    is_sup: bool
     cursor_x: float
     cursor_y: float
     weight: Literal["normal", "bold"]
@@ -190,6 +189,7 @@ class Layout:
         self.size = 12
         self.weight = 'normal'
         self.style = 'roman'
+        self.is_sup = False
 
         for tok in tokens:
             self.token(tok)
@@ -224,11 +224,18 @@ class Layout:
             self.flush()
         elif token.tag == '/h1':
             self.flush(center=True)
+        elif token.tag == 'sup':
+            self.is_sup = True
+            self.size /= 2
+        elif token.tag == '/sup':
+            self.is_sup = False
+            self.size *= 2
+
 
     def word(self, text: Text):
         for word in text.text.split():
             font = get_font(
-                size=self.size,
+                size=int(self.size),
                 weight=self.weight,
                 style=self.style
             )
@@ -236,23 +243,27 @@ class Layout:
             if self.cursor_x + w >= WIDTH - HSTEP:
                 self.flush()
 
-            self.line.append((self.cursor_x, word, font))
+            self.line.append((self.cursor_x, word, font, self.is_sup))
             self.cursor_x += w + font.measure(' ')
 
     def flush(self, center=False):
         if not self.line: return
         if center:
-            last_x , last_word, last_font = self.line[-1]
-            first_x, _, _ = self.line[0]
+            last_x, last_word, last_font, _ = self.line[-1]
+            first_x, _, _, _ = self.line[0]
             total_width = last_x + last_font.measure(last_word) - first_x
             h_offset = (WIDTH - 2 * HSTEP - total_width) / 2
         else:
             h_offset = 0
-        metrics = [font.metrics() for x, word, font in self.line]
+        metrics = [font.metrics() for _, _, font, _ in self.line]
         max_ascent = max([metric['ascent'] for metric in metrics])
         baseline = self.cursor_y + 1.25 * max_ascent
-        for x, word, font in self.line:
-            y = baseline - font.metrics('ascent')
+        top = baseline - max_ascent
+        for x, word, font, is_sup in self.line:
+            if is_sup:
+                y = top
+            else:
+                y = baseline - font.metrics('ascent')
             self.display_list.append((x + h_offset, y, word, font))
         max_descent = max([metric['descent'] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
