@@ -1,4 +1,3 @@
-from typing import List, Literal, Tuple, Union
 import socket
 import ssl
 import time
@@ -8,25 +7,19 @@ import tkinter.font
 class RedirectLoopError(Exception): pass
 
 class CacheItem:
-    content: str
-    add_time: float
-    max_age: int
-
-    def __init__(self, content: str, max_age: int) -> None:
+    def __init__(self, content, max_age):
         self.content = content
         self.max_age = max_age
         self.add_time = time.time()
 
 class Cache:
-    cache: dict[str, CacheItem]
-
-    def __init__(self) -> None:
+    def __init__(self):
         self.cache = {}
 
-    def add(self, key: str, content: str, max_age: int) -> None:
+    def add(self, key, content, max_age):
         self.cache[key] = CacheItem(content, max_age)
 
-    def get(self, key: str) -> str | None:
+    def get(self, key):
         if key in self.cache:
             item = self.cache[key]
             if time.time() - item.add_time < item.max_age:
@@ -38,11 +31,7 @@ class Cache:
 cache = Cache()
 
 class URL:
-    scheme: str
-    host: str | None
-    port: int | None
-    path: str
-    def __init__(self, url: str) -> None:
+    def __init__(self, url):
         self.scheme, url = url.split("://")
         assert self.scheme in ['http', 'https', 'file']
         if self.scheme == 'http':
@@ -62,10 +51,11 @@ class URL:
             self.host = None
             self.port = None
             self.path = url
+
     def __repr__(self):
         return f"URL(scheme={self.scheme}, host={self.host}, port={self.port}, path={repr(self.path)})"
 
-    def request(self, headers: dict[str, str] | None=None, redirect_count: int=0) -> str:
+    def request(self, headers=None, redirect_count=0):
         global cache
         if redirect_count == 10:
             raise RedirectLoopError()
@@ -134,45 +124,134 @@ class URL:
         return content
 
 class Text:
-    text: str
-    def __init__(self, text: str):
+    def __init__(self, text, parent):
         self.text = text
-    def __repr__(self) -> str:
-        return f"Text({repr(self.text)})"
+        self.children = []
+        self.parent = parent
+    def __repr__(self) :
+        return repr(self.text)
 
-class Tag:
-    tag: str
-    def __init__(self, tag: str):
+class Element:
+    def __init__(self, tag, attributes, parent):
         self.tag = tag
-    def __repr__(self) -> str:
-        return f"Tag({repr(self.tag)})"
+        self.children = []
+        self.attributes = attributes
+        self.parent = parent
+    def __repr__(self):
+        attrs = [" " + k + "=\"" + v + "\"" for k, v  in self.attributes.items()]
+        attr_str = ""
+        for attr in attrs:
+            attr_str += attr
+        return "<" + self.tag + attr_str + ">"
 
-Token = Union[Text, Tag]
+SELF_CLOSING_TAGS = [
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+]
 
-def lex(body: str) -> List[Token]:
-    out = []
-    buffer = ''
-    in_tag = False
-    for c in body:
-        if c == '<':
-            in_tag = True
-            if buffer: out.append(Text(buffer))
-            buffer = ''
-        elif c == '>':
-            in_tag = False
-            out.append(Tag(buffer))
-            buffer = ''
+class HTMLParser:
+
+    HEAD_TAGS = [
+        "base", "basefont", "bgsound", "noscript",
+        "link", "meta", "title", "style", "script",
+    ]
+
+    def __init__(self, body):
+        self.body = body
+        self.unfinished = []
+
+    def implicit_tags(self, tag):
+        while True:
+            open_tags = [node.tag for node in self.unfinished]
+            if open_tags == [] and tag != "html":
+                self.add_tag('html')
+            elif open_tags == ["html"] \
+                and tag not in ["head", "body", "/html"]:
+                if tag in self.HEAD_TAGS:
+                    self.add_tag("head")
+                else:
+                    self.add_tag("body")
+            elif open_tags == ['html', 'head'] and \
+                    tag not in ['/head'] + self.HEAD_TAGS:
+                self.add_tag("/head")
+            else:
+                break
+    def add_text(self, text):
+        if text.isspace(): return
+        self.implicit_tags(None)
+        parent = self.unfinished[-1]
+        node = Text(text, parent)
+        parent.children.append(node)
+
+    def get_attributes(self, text):
+        parts = text.split()
+        tag = parts[0].casefold()
+        attributes = {}
+        for attrpair in parts[1:]:
+            if "=" in attrpair:
+                key, value = attrpair.split("=", 1)
+                if len(value) > 2 and value[0] in ["'", "\""]:
+                    value = value[1:-1]
+                attributes[key.casefold()] = value
+            else:
+                attributes[attrpair.casefold()] = ""
+        return tag, attributes
+
+    def add_tag(self, tag):
+        tag, attributes = self.get_attributes(tag)
+        if tag.startswith("!"): return
+        self.implicit_tags(tag)
+        if tag.startswith("/"):
+            if len(self.unfinished) == 1: return
+            node = self.unfinished.pop()
+            parent = self.unfinished[-1]
+            parent.children.append(node)
+        elif tag in SELF_CLOSING_TAGS:
+            parent = self.unfinished[-1]
+            node = Element(tag, attributes, parent)
+            parent.children.append(node)
         else:
-            buffer += c
-    if not in_tag and buffer:
-        out.append(Text(buffer))
-    return out
+            parent = self.unfinished[-1] if self.unfinished else None
+            node = Element(tag, attributes, parent)
+            self.unfinished.append(node)
 
-DisplayList = List[Tuple[float, float, str, tkinter.font.Font]]
-Line = List[Tuple[float, str, tkinter.font.Font, bool]]
+    def finish(self):
+        if not self.unfinished:
+            self.implicit_tags(None)
+        while len(self.unfinished) > 1:
+            node = self.unfinished.pop()
+            parent = self.unfinished[-1]
+            parent.children.append(node)
+        return self.unfinished.pop()
+
+    def parse(self):
+        text = ""
+        in_tag = False
+
+        for c in self.body:
+            if c == "<":
+                in_tag = True
+                if text: self.add_text(text)
+                text = ""
+            elif c == ">":
+                in_tag = False
+                self.add_tag(text)
+                text = ""
+            else:
+                text += c
+
+        if not in_tag and text:
+            self.add_text(text)
+
+        return self.finish()
+
+def print_tree(node, indent = 0):
+    print(" " * indent, node)
+    for child in node.children:
+        print_tree(child, indent + 2)
 
 # "Hello123Abc" -> ["H", "ELLO", "123A", "BC"]
-def attr_split(word: str) -> List[str]:
+def attr_split(word):
     out = []
     buffer = ''
     is_lower = False
@@ -195,17 +274,7 @@ def attr_split(word: str) -> List[str]:
     return out
 
 class Layout:
-    display_list: DisplayList
-    line: Line
-    size: float
-    is_sup: bool
-    is_abbr: bool
-    cursor_x: float
-    cursor_y: float
-    weight: Literal["normal", "bold"]
-    style: Literal['roman', 'italic']
-
-    def __init__(self, tokens: List[Token]):
+    def __init__(self, tree):
         self.display_list = []
         self.line = []
         self.cursor_x = HSTEP
@@ -216,109 +285,109 @@ class Layout:
         self.is_sup = False
         self.is_abbr = False
 
-        for tok in tokens:
-            self.token(tok)
+        self.recurse(tree)
 
         self.flush()
 
-    def token(self, token: Token):
-        if isinstance(token, Text):
-            self.word(token)
-        elif token.tag == 'i':
+    def open_tag(self, tag):
+        if tag == 'i':
             self.style = "italic"
-        elif token.tag == '/i':
-            self.style = 'roman'
-        elif token.tag == 'b':
+        elif tag == 'b':
             self.weight = 'bold'
-        elif token.tag == '/b':
-            self.weight = 'normal'
-        elif token.tag == 'small':
+        elif tag == 'small':
             self.size -= 2
-        elif token.tag == '/small':
-            self.size += 2
-        elif token.tag == 'big':
+        elif tag == 'big':
             self.size += 4
-        elif token.tag == '/big':
-            self.size -= 4
-        elif token.tag == 'br':
+        elif tag == 'br':
             self.flush()
-        elif token.tag == '/p':
-            self.flush()
-            self.cursor_y += VSTEP
-        elif token.tag == 'h1 class="title"':
-            self.flush()
-        elif token.tag == '/h1':
-            self.flush(center=True)
-        elif token.tag == 'sup':
+        elif tag == 'sup':
             self.is_sup = True
-        elif token.tag == '/sup':
-            self.is_sup = False
-        elif token.tag == 'abbr':
+        elif tag == 'abbr':
             self.is_abbr = True
-        elif token.tag == '/abbr':
+
+    def close_tag(self, tag):
+        if tag == 'i':
+            self.style = 'roman'
+        elif tag == 'b':
+            self.weight = 'normal'
+        elif tag == 'small':
+            self.size += 2
+        elif tag == 'big':
+            self.size -= 4
+        elif tag == 'sup':
+            self.is_sup = False
+        elif tag == 'abbr':
             self.is_abbr = False
 
+    def recurse(self, tree):
+        if isinstance(tree, Text):
+            for word in tree.text.split():
+                self.word(word)
+        else:
+            self.open_tag(tree.tag)
+            for child in tree.children:
+                self.recurse(child)
+            self.close_tag(tree.tag)
 
-    def word(self, text: Text):
-        for word in text.text.split():
-            if self.is_abbr:
-                w = 0
-                for s in attr_split(word):
-                    if s.islower():
-                        size = self.size / 2
-                        weight = 'bold'
-                    else:
-                        size = self.size
-                        weight = self.weight
-                    font = get_font(
-                        size=int(size),
-                        weight=weight,
-                        style=self.style
-                    )
-                    w += font.measure(s)
-            else:
-                size = self.is_sup and self.size / 2 or self.size
+    def word(self, word):
+        if self.is_abbr:
+            w = 0
+            for s in attr_split(word):
+                if s.islower():
+                    size = self.size / 2
+                    weight = 'bold'
+                else:
+                    size = self.size
+                    weight = self.weight
                 font = get_font(
                     size=int(size),
-                    weight=self.weight,
+                    weight=weight,
                     style=self.style
                 )
-                w = font.measure(word)
-            if self.cursor_x + w >= WIDTH - HSTEP:
-                if word.find("\N{soft hyphen}") != -1:
-                    parts = word.split("\N{soft hyphen}")
-                    split_index = -1
-                    for i in range(1, len(parts) + 1):
-                        w = font.measure(f'{"".join(parts[0:i])}-')
-                        if self.cursor_x + w >= WIDTH - HSTEP:
-                            split_index = i - 1
-                            break
-                    if split_index != -1:
-                        self.line.append((self.cursor_x, "".join(parts[0:split_index]) + "-", font, self.is_sup))
-                        self.flush()
-                        self.word(Text("\N{soft hyphen}".join(parts[split_index:])))
-                        continue
-                self.flush()
-            if self.is_abbr:
-                for s in attr_split(word):
-                    if s.islower():
-                        size = self.size / 2
-                        weight = 'bold'
-                    else:
-                        size = self.size
-                        weight = self.weight
-                    font = get_font(
-                        size=int(size),
-                        weight=weight,
-                        style=self.style
-                    )
-                    self.line.append((self.cursor_x, s.upper(), font, self.is_sup))
-                    self.cursor_x += font.measure(s.upper())
-                    space_font = get_font(size=int(self.size), weight=self.weight, style=self.style)
-                self.cursor_x += space_font.measure(' ')
-            else:
-                self.line.append((self.cursor_x, word, font, self.is_sup))
-                self.cursor_x += w + font.measure(' ')
+                w += font.measure(s)
+        else:
+            size = self.is_sup and self.size / 2 or self.size
+            font = get_font(
+                size=int(size),
+                weight=self.weight,
+                style=self.style
+            )
+            w = font.measure(word)
+        if self.cursor_x + w >= WIDTH - HSTEP:
+            if word.find("\N{soft hyphen}") != -1:
+                parts = word.split("\N{soft hyphen}")
+                split_index = -1
+                for i in range(1, len(parts) + 1):
+                    w = font.measure(f'{"".join(parts[0:i])}-')
+                    if self.cursor_x + w >= WIDTH - HSTEP:
+                        split_index = i - 1
+                        break
+                if split_index != -1:
+                    self.line.append((self.cursor_x, "".join(parts[0:split_index]) + "-", font, self.is_sup))
+                    self.flush()
+                    self.word(Text("\N{soft hyphen}".join(parts[split_index:])))
+                    return
+            self.flush()
+        if self.is_abbr:
+            for s in attr_split(word):
+                if s.islower():
+                    size = self.size / 2
+                    weight = 'bold'
+                else:
+                    size = self.size
+                    weight = self.weight
+                font = get_font(
+                    size=int(size),
+                    weight=weight,
+                    style=self.style
+                )
+                self.line.append((self.cursor_x, s.upper(), font, self.is_sup))
+                self.cursor_x += font.measure(s.upper())
+                space_font = get_font(size=int(self.size), weight=self.weight, style=self.style)
+            self.cursor_x += space_font.measure(' ')
+        else:
+            self.line.append((self.cursor_x, word, font, self.is_sup))
+            self.cursor_x += w + font.measure(' ')
 
     def flush(self, center=False):
         if not self.line: return
@@ -358,7 +427,7 @@ def get_font(size, weight, style) -> tkinter.font.Font:
         FONTS[key] = (font, label)
     return FONTS[key][0]
 
-def set_parameters(**params: int):
+def set_parameters(**params):
     global WIDTH, HEIGHT, HSTEP, VSTEP, SCROLL_STEP
     if "WIDTH" in params: WIDTH = params["WIDTH"]
     if "HEIGHT" in params: HEIGHT = params["HEIGHT"]
@@ -369,13 +438,6 @@ def set_parameters(**params: int):
 GRINNING_FACE: tkinter.PhotoImage
 
 class Browser:
-    window: tkinter.Tk
-    canvas: tkinter.Canvas
-    tokens: List[Token]
-    display_list: DisplayList
-    scroll: float
-
-
     def __init__(self):
         global GRINNING_FACE
         self.window = tkinter.Tk()
@@ -390,12 +452,12 @@ class Browser:
         self.window.bind("<Configure>", self.resize)
         GRINNING_FACE = tkinter.PhotoImage(file='openmoji/1F600.png')
 
-    def resize(self, e: tkinter.Event):
+    def resize(self, e):
         set_parameters(WIDTH=e.width, HEIGHT=e.height)
-        self.display_list = Layout(self.tokens).display_list
+        self.display_list = Layout(self.nodes).display_list
         self.draw()
 
-    def scrolldown(self, e: tkinter.Event):
+    def scrolldown(self, e):
         if self.scroll + HEIGHT + SCROLL_STEP > self.content_height:
             self.scroll += self.content_height - self.scroll - HEIGHT
         else:
@@ -404,8 +466,8 @@ class Browser:
 
     def load(self, url: URL):
         body = url.request()
-        self.tokens = lex(body)
-        self.display_list = Layout(self.tokens).display_list
+        self.nodes = HTMLParser(body).parse()
+        self.display_list = Layout(self.nodes).display_list
         self.draw()
 
     @property

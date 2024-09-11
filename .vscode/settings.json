@@ -1,5 +1,5 @@
 {
-  "python.analysis.typeCheckingMode": "basic",
-  "python.analysis.autoImportCompletions": true,
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.autoImportCompletions": false,
   "editor.glyphMargin": true
 }
