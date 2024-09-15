@@ -176,6 +176,7 @@ class HTMLParser:
                 self.add_tag("/head")
             else:
                 break
+
     def add_text(self, text):
         if text.isspace(): return
         self.implicit_tags(None)
@@ -184,17 +185,59 @@ class HTMLParser:
         parent.children.append(node)
 
     def get_attributes(self, text):
-        parts = text.split()
-        tag = parts[0].casefold()
+        if text == "script defer src='my-script.js'":
+            pass
+        splited = text.split(" ", 1)
+        tag = splited[0].casefold()
+        if len(splited) == 1:
+            return tag, {}
+        attribute_text = splited[1]
         attributes = {}
-        for attrpair in parts[1:]:
-            if "=" in attrpair:
-                key, value = attrpair.split("=", 1)
-                if len(value) > 2 and value[0] in ["'", "\""]:
-                    value = value[1:-1]
-                attributes[key.casefold()] = value
+        buffer = ""
+        key = ""
+        value = ""
+        in_quote = ""
+        def add_attribute():
+            nonlocal key, value, buffer
+            attributes[key] = value
+            key = ""
+            value = ""
+            buffer = ""
+        for c in attribute_text:
+            if c == "=":
+                if buffer and not key:
+                    key = buffer
+                    buffer = ""
+                else:
+                    buffer += c
+            elif c in ['"', "'"]:
+                if in_quote:
+                    if in_quote == c:
+                        in_quote = ""
+                        if key:
+                            value = buffer
+                            add_attribute()
+                    else:
+                        buffer += c
+                else:
+                    in_quote = c
+            elif c.isspace():
+                if in_quote:
+                    buffer += c
+                elif key:
+                    value = buffer
+                    add_attribute()
+                else:
+                    key = buffer
+                    add_attribute()
             else:
-                attributes[attrpair.casefold()] = ""
+                buffer += c
+        if buffer:
+            if key:
+                value = buffer
+            else:
+                key = buffer
+            add_attribute()
         return tag, attributes
 
     def add_tag(self, tag):
@@ -228,6 +271,7 @@ class HTMLParser:
         text = ""
         in_tag = False
         in_comment = False
+        in_script = False
         i = 0
         while i < len(self.body):
             c = self.body[i]
@@ -248,13 +292,28 @@ class HTMLParser:
                 continue
 
             if c == "<":
-                in_tag = True
-                if text: self.add_text(text)
-                text = ""
+                if in_script:
+                    text += c
+                else:
+                    in_tag = True
+                    if text: self.add_text(text)
+                    text = ""
             elif c == ">":
-                in_tag = False
-                self.add_tag(text)
-                text = ""
+                if in_script:
+                    text += c
+                    if text.endswith("</script>"):
+                        self.add_text(text[:-len("</script>")])
+                        self.add_tag("/script")
+                        text = ""
+                        in_script = False
+                else:
+                    in_tag = False
+                    self.add_tag(text)
+                    if text.startswith("script"):
+                        in_script = True
+                    elif text == "/script":
+                        in_script = False
+                    text = ""
             else:
                 text += c
             i += 1
