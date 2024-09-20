@@ -56,6 +56,14 @@ class URL:
         return "URL(scheme={}, host={}, port={}, path={!r})".format(
             self.scheme, self.host, self.port, self.path)
 
+    def __str__(self):
+        port_part = ":" + str(self.port)
+        if self.scheme == "https" and self.port == 443:
+            port_part = ""
+        if self.scheme == "http" and self.port == 80:
+            port_part = ""
+        return self.scheme + "://" + self.host + port_part + self.path
+
     def request(self, headers=None, redirect_count=0):
         print('Requesting', self)
         global cache
@@ -893,7 +901,24 @@ class Chrome:
             self.padding + plus_width,
             self.padding + self.font_height
         )
-        self.bottom = self.tabbar_bottom + self.padding
+        self.urlbar_top = self.tabbar_bottom
+        self.urlbar_bottom = self.urlbar_top + self.font_height + 2 * self.padding
+        self.bottom = self.urlbar_bottom
+
+        back_width = self.font.measure("<") + 2 * self.padding
+        self.back_rect = Rect(
+            self.padding,
+            self.urlbar_top + self.padding,
+            self.padding + back_width,
+            self.urlbar_bottom - self.padding
+        )
+
+        self.address_rect = Rect(
+            self.back_rect.top + self.padding,
+            self.urlbar_top + self.padding,
+            WIDTH - self.padding,
+            self.urlbar_bottom - self.padding
+        )
 
     def click(self, x, y):
         if self.newtab_rect.containsPoint(x, y):
@@ -949,6 +974,21 @@ class Chrome:
                 cmds.append(DrawLine(
                     bounds.right, bounds.bottom, WIDTH, bounds.bottom,
                     "black", 1))
+
+        cmds.append(DrawOutline(self.back_rect, "black", 1))
+        cmds.append(DrawText(
+            self.back_rect.left + self.padding,
+            self.back_rect.top,
+            "<", self.font, "black"
+        ))
+
+        cmds.append(DrawOutline(self.address_rect, "black", 1))
+        url = str(self.browser.active_tab.url)
+        cmds.append(DrawText(
+            self.address_rect.left + self.padding,
+            self.address_rect.top,
+            url, self.font, "black"
+        ))
 
         return cmds
 
