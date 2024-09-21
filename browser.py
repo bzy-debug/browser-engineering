@@ -65,7 +65,7 @@ class URL:
         return self.scheme + "://" + self.host + port_part + self.path
 
     def request(self, headers=None, redirect_count=0):
-        print('Requesting', self)
+        # print('Requesting', self)
         global cache
         if redirect_count == 10:
             raise RedirectLoopError()
@@ -823,6 +823,10 @@ class Tab:
         self.scroll = 0
         self.url = None
         self.tab_height = tab_height
+        self.history = []
+
+    def __repr__(self):
+        return "Tab(history={})".format(self.history)
 
     def scrollup(self):
         self.scroll = max(self.scroll - SCROLL_STEP, 0)
@@ -846,7 +850,14 @@ class Tab:
                 return self.load(url)
             elt = elt.parent
 
+    def go_back(self):
+        if len(self.history) > 1:
+            self.history.pop()
+            back = self.history.pop()
+            self.load(back)
+
     def load(self, url: URL):
+        self.history.append(url)
         self.scroll = 0
         self.url = url
         body = url.request()
@@ -919,15 +930,31 @@ class Chrome:
             WIDTH - self.padding,
             self.urlbar_bottom - self.padding
         )
+        self.focus = None
+        self.address_bar = ""
 
     def click(self, x, y):
         if self.newtab_rect.containsPoint(x, y):
             self.browser.new_tab(URL("https://browser.engineering/"))
+        elif self.back_rect.containsPoint(x, y):
+            self.browser.active_tab.go_back()
+        elif self.address_rect.containsPoint(x, y):
+            self.focus = "address bar"
+            self.address_bar = ""
         else:
             for i, tab in enumerate(self.browser.tabs):
                 if self.tab_rect(i).containsPoint(x, y):
                     self.browser.active_tab = tab
                     break
+
+    def keypress(self, char):
+        if self.focus == "address bar":
+            self.address_bar += char
+
+    def enter(self):
+        if self.focus == "address bar":
+            self.browser.active_tab.load(URL(self.address_bar))
+            self.focus = None
 
     def tab_rect(self, i):
         tabs_start = self.newtab_rect.right + self.padding
@@ -984,11 +1011,26 @@ class Chrome:
 
         cmds.append(DrawOutline(self.address_rect, "black", 1))
         url = str(self.browser.active_tab.url)
-        cmds.append(DrawText(
-            self.address_rect.left + self.padding,
-            self.address_rect.top,
-            url, self.font, "black"
-        ))
+        if self.focus == "address bar":
+            cmds.append(DrawText(
+                self.address_rect.left + self.padding,
+                self.address_rect.top,
+                self.address_bar, self.font, "black"
+            ))
+
+            w = self.font.measure(self.address_bar)
+            cmds.append(DrawLine(
+                self.address_rect.left + self.padding + w,
+                self.address_rect.top,
+                self.address_rect.left + self.padding + w,
+                self.address_rect.bottom,
+                "red", 1))
+        else:
+            cmds.append(DrawText(
+                self.address_rect.left + self.padding,
+                self.address_rect.top,
+                url, self.font, "black"
+            ))
 
         return cmds
 
@@ -1008,6 +1050,8 @@ class Browser:
         self.window.bind("<Up>", self.scrollup)
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Button-1>", self.handle_click)
+        self.window.bind("<Key>", self.handle_key)
+        self.window.bind("<Return>", self.handle_enter)
 
     def scrollup(self, e):
         self.active_tab.scrollup()
@@ -1024,6 +1068,16 @@ class Browser:
             tab_y = e.y - self.chrome.bottom
             self.active_tab.click(e.x, tab_y)
 
+        self.draw()
+
+    def handle_key(self, e):
+        if len(e.char) == 0: return
+        if not (0x20 <= ord(e.char) < 0x7f): return
+        self.chrome.keypress(e.char)
+        self.draw()
+
+    def handle_enter(self, e):
+        self.chrome.enter()
         self.draw()
 
     def draw(self):
